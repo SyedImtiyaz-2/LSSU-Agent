@@ -299,8 +299,7 @@ if __name__ == "__main__":
             api_key=os.getenv("LIVEKIT_API_KEY"),
             api_secret=os.getenv("LIVEKIT_API_SECRET"),
             ws_url=os.getenv("LIVEKIT_URL"),
-            num_idle_processes=1,
-            initialize_process_timeout=120,
+            job_executor_type=agents.JobExecutorType.THREAD,
             job_memory_warn_mb=0,
         )
     )
