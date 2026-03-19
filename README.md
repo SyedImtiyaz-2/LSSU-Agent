@@ -1,4 +1,4 @@
-# LSSU Session Agent
+# LSSU Agent
 
 AI-powered voice interview platform for requirements gathering from LSSU (Lake Superior State University) department staff. An AI agent conducts structured voice sessions -- asking 5 predefined questions about roles, workflows, tools, and challenges -- then generates 3 context-aware follow-up questions using a RAG knowledge base. Transcripts are processed through an LLM and output as structured PDF reports.
 
