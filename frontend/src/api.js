@@ -1,6 +1,7 @@
 import axios from "axios";
 
-const api = axios.create({ baseURL: "/api" });
+const API_BASE = import.meta.env.VITE_API_URL || "/api";
+const api = axios.create({ baseURL: API_BASE });
 
 // Attach auth token to every request
 api.interceptors.request.use((config) => {
@@ -85,5 +86,5 @@ export async function generateReport(interviewId) {
 }
 
 export function getReportDownloadUrl(interviewId) {
-  return `/api/reports/${interviewId}/download`;
+  return `${API_BASE}/reports/${interviewId}/download`;
 }
