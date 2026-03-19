@@ -22,13 +22,12 @@ function InterviewContent({ onDisconnect }) {
   const [agentSpeaking, setAgentSpeaking] = useState(false);
   const [userSpeaking, setUserSpeaking] = useState(false);
   const [interviewDone, setInterviewDone] = useState(false);
-  // Track in-progress streaming segments by participant+segmentId
   const pendingSegments = useRef({});
 
   useEffect(() => {
     if (!room) return;
 
-    const handleData = (payload, participant) => {
+    const handleData = (payload) => {
       try {
         const text = new TextDecoder().decode(payload);
         const data = JSON.parse(text);
@@ -56,7 +55,6 @@ function InterviewContent({ onDisconnect }) {
         if (!text) continue;
 
         if (seg.final) {
-          // Segment is final — if we were tracking it as pending, replace; otherwise add new
           if (pendingSegments.current[segKey] !== undefined) {
             const idx = pendingSegments.current[segKey];
             delete pendingSegments.current[segKey];
@@ -69,7 +67,6 @@ function InterviewContent({ onDisconnect }) {
             setMessages((prev) => [...prev, { role, text }]);
           }
         } else {
-          // Streaming partial — update in place
           if (pendingSegments.current[segKey] !== undefined) {
             const idx = pendingSegments.current[segKey];
             setMessages((prev) => {
@@ -78,7 +75,6 @@ function InterviewContent({ onDisconnect }) {
               return updated;
             });
           } else {
-            // First partial for this segment — add and remember index
             setMessages((prev) => {
               pendingSegments.current[segKey] = prev.length;
               return [...prev, { role, text }];
@@ -111,77 +107,88 @@ function InterviewContent({ onDisconnect }) {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Status */}
+      {/* Status bar */}
       <div className="flex items-center justify-between px-6 py-3 border-b border-neutral-800">
         <div className="flex items-center gap-3">
           <div
-            className={`w-2 h-2 rounded-full ${
+            className={`w-2.5 h-2.5 rounded-full ${
               connectionState === "connected"
                 ? agentConnected
-                  ? "bg-white"
-                  : "bg-neutral-500 animate-pulse"
-                : "bg-neutral-600"
+                  ? "bg-green-500"
+                  : "bg-amber-500 animate-pulse"
+                : "bg-neutral-600 animate-pulse"
             }`}
           />
-          <span className="text-xs text-neutral-500">
+          <span className="text-sm text-neutral-400">
             {connectionState === "connected"
               ? agentConnected
-                ? "In progress"
-                : "Waiting for agent..."
+                ? "Session in progress"
+                : "Agent is getting ready..."
               : "Connecting..."}
           </span>
         </div>
         {interviewDone && (
-          <span className="text-xs text-neutral-400">Complete</span>
+          <span className="text-sm text-neutral-300 font-medium">Complete</span>
         )}
       </div>
 
-      {/* Main */}
+      {/* Main content */}
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-        {/* Left: Visualizer */}
-        <div className="lg:w-1/2 flex flex-col items-center justify-center p-8 border-b lg:border-b-0 lg:border-r border-neutral-800">
+        {/* Left: Agent + User visualizers (fixed, no scroll) */}
+        <div className="lg:w-[360px] flex-shrink-0 flex flex-col items-center justify-center p-8 border-b lg:border-b-0 lg:border-r border-neutral-800">
+          {/* Waiting overlay */}
+          {!agentConnected && connectionState === "connected" && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center z-10 pointer-events-none lg:relative lg:inset-auto lg:mb-8">
+              <Loader2 className="w-8 h-8 text-neutral-500 animate-spin mb-4" />
+              <p className="text-base text-neutral-400 font-medium">Preparing your session</p>
+              <p className="text-sm text-neutral-600 mt-1">The agent will be with you shortly...</p>
+            </div>
+          )}
+
           {/* Agent */}
-          <div className="mb-10">
+          <div className={`mb-10 ${!agentConnected ? "hidden lg:block opacity-30" : ""}`}>
             <div
-              className={`w-20 h-20 rounded-full border flex items-center justify-center mb-4 mx-auto transition-all duration-300 ${
+              className={`w-20 h-20 rounded-full border-2 flex items-center justify-center mb-4 mx-auto transition-all duration-300 ${
                 agentSpeaking
-                  ? "border-white bg-white/5"
+                  ? "border-white bg-white/10 shadow-[0_0_20px_rgba(255,255,255,0.1)]"
                   : "border-neutral-700 bg-transparent"
               }`}
             >
-              <span className="text-sm font-medium text-neutral-400">AI</span>
+              <span className="text-base font-semibold text-neutral-300">AI</span>
             </div>
-            <p className="text-xs text-neutral-600 text-center mb-3">Agent</p>
+            <p className="text-sm text-neutral-500 text-center mb-3">Agent</p>
             <AudioVisualizer isActive={agentSpeaking} />
           </div>
 
           {/* User */}
-          <div>
+          <div className={`${!agentConnected ? "hidden lg:block opacity-30" : ""}`}>
             <div
-              className={`w-16 h-16 rounded-full border flex items-center justify-center mb-4 mx-auto transition-all duration-300 ${
+              className={`w-16 h-16 rounded-full border-2 flex items-center justify-center mb-4 mx-auto transition-all duration-300 ${
                 userSpeaking
-                  ? "border-white bg-white/5"
+                  ? "border-white bg-white/10"
                   : "border-neutral-800 bg-transparent"
               }`}
             >
-              <Mic className="w-4 h-4 text-neutral-500" />
+              <Mic className="w-5 h-5 text-neutral-400" />
             </div>
-            <p className="text-xs text-neutral-600 text-center mb-3">You</p>
+            <p className="text-sm text-neutral-500 text-center mb-3">You</p>
             <AudioVisualizer isActive={userSpeaking} />
           </div>
         </div>
 
-        {/* Right: Transcript */}
-        <div className="lg:w-1/2 flex flex-col p-6 overflow-hidden">
-          <h3 className="text-xs text-neutral-600 uppercase tracking-widest mb-4">
+        {/* Right: Transcript (scrollable) */}
+        <div className="flex-1 flex flex-col p-6 overflow-hidden min-w-0">
+          <h3 className="text-xs text-neutral-600 uppercase tracking-widest mb-4 flex-shrink-0">
             Transcript
           </h3>
-          <TranscriptPanel messages={messages} />
+          <div className="flex-1 overflow-hidden">
+            <TranscriptPanel messages={messages} />
+          </div>
         </div>
       </div>
 
       {/* Controls */}
-      <div className="flex items-center justify-center gap-4 px-6 py-4 border-t border-neutral-800">
+      <div className="flex items-center justify-center gap-4 px-6 py-4 border-t border-neutral-800 flex-shrink-0">
         <button
           onClick={toggleMute}
           className={`w-12 h-12 rounded-full flex items-center justify-center transition-all border ${
@@ -259,7 +266,7 @@ export default function InterviewRoom() {
   if (!token || !wsUrl) {
     return (
       <div className="h-full flex items-center justify-center">
-        <Loader2 className="w-5 h-5 text-neutral-500 animate-spin" />
+        <Loader2 className="w-6 h-6 text-neutral-500 animate-spin" />
       </div>
     );
   }
