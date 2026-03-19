@@ -1,0 +1,25 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-dotenv==1.0.1
+python-multipart==0.0.18
+
+# LiveKit
+livekit-agents>=1.0.0
+livekit-plugins-openai>=1.0.0
+livekit-plugins-silero>=1.0.0
+livekit-api>=1.0.0
+
+# RAG
+llama-index-core>=0.12.0
+llama-index-readers-file>=0.4.0
+llama-index-llms-openai>=0.3.0
+llama-index-embeddings-openai>=0.3.0
+
+# Supabase
+supabase>=2.0.0
+
+# PDF
+fpdf2>=2.8.0
+
+# Utils
+aiofiles>=24.0.0
