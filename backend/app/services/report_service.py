@@ -56,10 +56,22 @@ def _generate_llm_report(interview_data: dict) -> str:
     return response.choices[0].message.content
 
 
-def generate_pdf_report(interview_data: dict) -> str:
-    """Generate a clean PDF report: LLM processes data first, then renders to PDF."""
+def render_pdf_from_text(interview_data: dict, report_text: str) -> str:
+    """Render a PDF from already-generated report text (no LLM call)."""
+    return _render_pdf(interview_data, report_text)
+
+
+def generate_pdf_report(interview_data: dict) -> tuple[str, str]:
+    """Generate a clean PDF report: LLM processes data first, then renders to PDF.
+    Returns (filepath, report_text) so report_text can be stored in DB."""
     # Step 1: LLM generates structured report
     report_text = _generate_llm_report(interview_data)
+    filepath = _render_pdf(interview_data, report_text)
+    return filepath, report_text
+
+
+def _render_pdf(interview_data: dict, report_text: str) -> str:
+    """Render report text to PDF file. Returns filepath."""
 
     # Sanitize Unicode characters that Helvetica can't render
     replacements = {

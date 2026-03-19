@@ -249,9 +249,9 @@ class InterviewAgent(Agent):
                 "transcript": mgr.transcript,
                 "summary": summary,
             }
-            filepath = generate_pdf_report(report_data)
+            filepath, report_text = generate_pdf_report(report_data)
             filename = os.path.basename(filepath)
-            update_interview(interview_id, {"report_file": filename})
+            update_interview(interview_id, {"report_file": filename, "report_text": report_text})
 
             logger.info(f"Interview {interview_id} saved with report {filename}")
 
