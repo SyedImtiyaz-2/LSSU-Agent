@@ -22,7 +22,6 @@ AI-powered voice interview platform for requirements gathering from LSSU (Lake S
 LSSU/
 ├── .env                          # Environment variables 
 ├── .gitignore
-├── AGENTS.md                     # Original requirements document
 │
 ├── backend/
 │   ├── requirements.txt
