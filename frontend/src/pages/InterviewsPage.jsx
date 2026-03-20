@@ -13,7 +13,7 @@ export default function InterviewsPage() {
     setLoading(true);
     try {
       const data = await listInterviews();
-      setInterviews(data || []);
+      setInterviews((data || []).filter((i) => i.status === "completed"));
     } catch (err) {
       console.error(err);
     } finally {
@@ -97,14 +97,8 @@ export default function InterviewsPage() {
                   </div>
                 </div>
 
-                <span
-                  className={`text-xs px-3 py-1 rounded-lg font-medium border ${
-                    i.status === "completed"
-                      ? "border-neutral-600 text-neutral-300 bg-neutral-800/50"
-                      : "border-neutral-800 text-neutral-500"
-                  }`}
-                >
-                  {i.status}
+                <span className="text-xs px-3 py-1 rounded-lg font-medium border border-neutral-600 text-neutral-300 bg-neutral-800/50">
+                  completed
                 </span>
               </div>
             ))}

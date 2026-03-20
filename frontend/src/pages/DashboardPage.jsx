@@ -17,12 +17,13 @@ export default function DashboardPage() {
           listInterviews(),
           listDocuments(),
         ]);
+        const completedInterviews = (interviews || []).filter((i) => i.status === "completed");
         setStats({
-          interviews: interviews?.length || 0,
-          completed: interviews?.filter((i) => i.status === "completed").length || 0,
+          interviews: completedInterviews.length,
+          completed: completedInterviews.length,
           documents: docs?.length || 0,
         });
-        setRecent((interviews || []).slice(0, 5));
+        setRecent(completedInterviews.slice(0, 5));
       } catch (err) {
         console.error(err);
       } finally {
@@ -72,8 +73,8 @@ export default function DashboardPage() {
         {/* Stats */}
         <div className="grid grid-cols-3 gap-5 mb-10">
           {[
-            { label: "Total Sessions", value: stats.interviews, icon: Mic, desc: "All time" },
-            { label: "Completed", value: stats.completed, icon: FileText, desc: "Ready for reports" },
+            { label: "Completed Sessions", value: stats.interviews, icon: Mic, desc: "Total sessions done" },
+            { label: "Reports Available", value: stats.completed, icon: FileText, desc: "Ready to download" },
             { label: "Documents Indexed", value: stats.documents, icon: Database, desc: "Knowledge base" },
           ].map(({ label, value, icon: Icon, desc }) => (
             <div
@@ -141,14 +142,8 @@ export default function DashboardPage() {
                       </p>
                     </div>
                   </div>
-                  <span
-                    className={`text-xs px-3 py-1 rounded-lg font-medium border ${
-                      interview.status === "completed"
-                        ? "border-neutral-600 text-neutral-300 bg-neutral-800/50"
-                        : "border-neutral-800 text-neutral-500"
-                    }`}
-                  >
-                    {interview.status}
+                  <span className="text-xs px-3 py-1 rounded-lg font-medium border border-neutral-600 text-neutral-300 bg-neutral-800/50">
+                    completed
                   </span>
                 </div>
               ))}
