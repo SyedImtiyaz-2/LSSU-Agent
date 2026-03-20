@@ -18,7 +18,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 from app.agent.prompts import (
     SYSTEM_PROMPT,
     PREDEFINED_QUESTIONS,
-    FOLLOWUP_INTRO,
     CLOSING_MESSAGE,
     SUMMARY_PROMPT,
 )
@@ -27,6 +26,12 @@ from app.services.report_service import generate_pdf_report
 from app.services.supabase_service import update_interview, get_interview
 
 logger = logging.getLogger("interview-agent")
+
+FALLBACK_FOLLOWUPS = [
+    "Could you describe a specific scenario where having an AI assistant would save you the most time?",
+    "If you could automate one repetitive task in your day, what would it be?",
+    "Is there anything else you'd like to share about how technology could better support your work?",
+]
 
 
 class InterviewState(Enum):
@@ -57,6 +62,8 @@ class InterviewManager:
         self.followup_questions = []
         self.name = ""
         self.department = ""
+        self._followups_ready = asyncio.Event()
+        self._followups_generating = False
 
     def get_current_question(self) -> str | None:
         if self.state == InterviewState.Q1_NAME:
@@ -106,24 +113,41 @@ class InterviewManager:
         if idx + 1 < len(STATE_ORDER):
             self.state = STATE_ORDER[idx + 1]
 
-    def generate_followups(self):
+    def start_followup_generation(self):
+        """Start generating follow-ups in background (non-blocking)."""
+        if self._followups_generating:
+            return
+        self._followups_generating = True
+        asyncio.create_task(self._generate_followups_async())
+
+    async def _generate_followups_async(self):
+        """Generate follow-up questions in a thread to avoid blocking the agent."""
         try:
-            logger.info(f"Generating follow-up questions with RAG for: {self.answers.get('name', 'Unknown')}")
-            logger.info(f"  Department: {self.answers.get('department', 'Unknown')}")
-            logger.info(f"  Challenges: {self.answers.get('challenges', '')[:100]}")
-            self.followup_questions = generate_followup_questions(self.answers)
-            logger.info(f"Generated {len(self.followup_questions)} follow-up questions successfully")
+            logger.info(f"Generating follow-ups in background for: {self.answers.get('name', 'Unknown')}")
+            loop = asyncio.get_event_loop()
+            questions = await loop.run_in_executor(
+                None, generate_followup_questions, self.answers
+            )
+            self.followup_questions = questions
+            logger.info(f"Generated {len(self.followup_questions)} follow-up questions")
             while len(self.followup_questions) < 3:
-                self.followup_questions.append(
-                    "Is there anything else you'd like to share about how AI could help in your role?"
-                )
+                self.followup_questions.append(FALLBACK_FOLLOWUPS[len(self.followup_questions)])
         except Exception as e:
             logger.error(f"Error generating followup questions: {e}", exc_info=True)
-            self.followup_questions = [
-                "Could you describe a specific scenario where having an AI assistant would save you the most time?",
-                "If you could automate one repetitive task in your day, what would it be?",
-                "Is there anything else you'd like to share about how technology could better support your work?",
-            ]
+            self.followup_questions = list(FALLBACK_FOLLOWUPS)
+        finally:
+            self._followups_ready.set()
+
+    async def wait_for_followups(self, timeout: float = 30.0):
+        """Wait for follow-ups to be ready, with timeout fallback."""
+        if self.followup_questions:
+            return
+        try:
+            await asyncio.wait_for(self._followups_ready.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            logger.warning("Follow-up generation timed out, using fallbacks")
+            self.followup_questions = list(FALLBACK_FOLLOWUPS)
+            self._followups_ready.set()
 
 
 # Global interview managers keyed by room name
@@ -142,11 +166,8 @@ class InterviewAgent(Agent):
 
         instructions = (
             f"{SYSTEM_PROMPT}\n\n"
-            f"CURRENT STATE: You are about to start the interview.\n"
-            f"Your first action: Greet the participant warmly and ask the first question:\n"
-            f'"{PREDEFINED_QUESTIONS[0]}"\n\n'
-            f"After each answer, acknowledge it briefly, then ask the next question in sequence.\n"
-            f"IMPORTANT: Only ask ONE question at a time. Wait for the response."
+            f"Greet them and ask: \"{PREDEFINED_QUESTIONS[0]}\"\n"
+            f"Keep your response under 2 sentences."
         )
         super().__init__(instructions=instructions)
 
@@ -173,38 +194,42 @@ class InterviewAgent(Agent):
         ):
             mgr.record_answer(user_text)
 
-            if mgr.state == InterviewState.Q5_CHALLENGES:
-                mgr.generate_followups()
+            # Start generating follow-ups in background after Q3 (non-blocking)
+            if mgr.state == InterviewState.Q3_DAILY_LIFE:
+                mgr.start_followup_generation()
+            # Re-trigger with more data after Q5
+            elif mgr.state == InterviewState.Q5_CHALLENGES:
+                mgr._followups_ready.clear()
+                mgr._followups_generating = False
+                mgr.start_followup_generation()
 
             mgr.advance()
         elif mgr.state == InterviewState.CLOSING:
             mgr.state = InterviewState.DONE
 
         # Update agent instructions based on current state
-        next_q = mgr.get_current_question()
         if mgr.state == InterviewState.CLOSING:
             await self.update_instructions(
-                f"{SYSTEM_PROMPT}\n\n"
-                f"The interview is now complete. Say the closing message:\n"
-                f'"{CLOSING_MESSAGE}"\n'
-                f"Thank them and end the conversation."
+                f"{SYSTEM_PROMPT}\n\nSay: \"{CLOSING_MESSAGE}\" Keep it brief."
             )
             asyncio.create_task(self._save_results())
-        elif mgr.state == InterviewState.FOLLOWUP_Q1 and next_q:
-            await self.update_instructions(
-                f"{SYSTEM_PROMPT}\n\n"
-                f"You just finished the 5 main questions. Now transition to follow-up questions.\n"
-                f"Say something like: \"{FOLLOWUP_INTRO}\"\n"
-                f"Then ask: \"{next_q}\"\n"
-                f"Only ask this ONE question."
-            )
-        elif next_q:
-            await self.update_instructions(
-                f"{SYSTEM_PROMPT}\n\n"
-                f"Acknowledge the user's previous answer briefly, then ask the next question:\n"
-                f'"{next_q}"\n'
-                f"Only ask this ONE question. Do not skip ahead."
-            )
+        elif mgr.state == InterviewState.FOLLOWUP_Q1:
+            # Wait for follow-ups to be ready (should already be done from Q3/Q5)
+            await mgr.wait_for_followups(timeout=15.0)
+            next_q = mgr.get_current_question()
+            if next_q:
+                await self.update_instructions(
+                    f"{SYSTEM_PROMPT}\n\n"
+                    f"Briefly say you have a few follow-up questions, then ask: \"{next_q}\"\n"
+                    f"Keep acknowledgment to 1 sentence max."
+                )
+        else:
+            next_q = mgr.get_current_question()
+            if next_q:
+                await self.update_instructions(
+                    f"{SYSTEM_PROMPT}\n\n"
+                    f"Acknowledge briefly (1 sentence), then ask: \"{next_q}\""
+                )
 
     async def _save_results(self):
         """Save interview results to Supabase and generate PDF."""
@@ -270,24 +295,34 @@ async def entrypoint(ctx: agents.JobContext):
     agent = InterviewAgent(room_name=room_name)
 
     session = AgentSession(
-        vad=silero.VAD.load(),
-        stt=openai.STT(),
-        llm=openai.LLM(model=os.getenv("OPENAI_MODEL", "gpt-4o-mini")),
-        tts=openai.TTS(voice="alloy"),
+        vad=silero.VAD.load(
+            min_silence_duration=0.5,
+            min_speech_duration=0.1,
+        ),
+        stt=openai.STT(model="whisper-1", language="en"),
+        llm=openai.LLM(
+            model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+            temperature=0.6,
+        ),
+        tts=openai.TTS(
+            model="tts-1",
+            voice="alloy",
+            speed=1.05,
+        ),
+        turn_detection=agents.turn_detector.EOUModel(),
     )
 
-    RoomOptions = agents.room_io.RoomOptions
     await session.start(
         room=ctx.room,
         agent=agent,
-        room_options=RoomOptions(audio_input=True, text_input=True, audio_output=True),
     )
 
     await session.generate_reply(
         instructions=(
-            "Greet the participant warmly. Introduce yourself as the LSSU AI Interview Agent. "
-            "Explain that you'll be asking a few questions to understand their work and how AI can help. "
-            f'Then ask the first question: "{PREDEFINED_QUESTIONS[0]}"'
+            "Introduce yourself briefly as the LSSU AI Session Agent. "
+            "Say you'll ask a few questions about their work. "
+            f'Then ask: "{PREDEFINED_QUESTIONS[0]}" '
+            "Keep it under 3 sentences total."
         )
     )
 
