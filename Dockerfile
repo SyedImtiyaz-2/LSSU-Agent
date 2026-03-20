@@ -16,5 +16,6 @@ COPY --from=backend /usr/local/lib/python3.11/site-packages /usr/local/lib/pytho
 COPY --from=backend /usr/local/bin /usr/local/bin
 COPY backend/ ./backend/
 COPY --from=frontend /app/dist ./backend/static/
+ENV PORT=8080
 EXPOSE 8080
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--app-dir", "backend"]
+CMD uvicorn app.main:app --host 0.0.0.0 --port $PORT --app-dir backend
