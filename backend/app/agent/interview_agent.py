@@ -295,10 +295,7 @@ async def entrypoint(ctx: agents.JobContext):
     agent = InterviewAgent(room_name=room_name)
 
     session = AgentSession(
-        vad=silero.VAD.load(
-            min_silence_duration=0.5,
-            min_speech_duration=0.1,
-        ),
+        vad=silero.VAD.load(),
         stt=openai.STT(model="whisper-1", language="en"),
         llm=openai.LLM(
             model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
@@ -307,9 +304,7 @@ async def entrypoint(ctx: agents.JobContext):
         tts=openai.TTS(
             model="tts-1",
             voice="alloy",
-            speed=1.05,
         ),
-        turn_detection=agents.turn_detector.EOUModel(),
     )
 
     await session.start(
