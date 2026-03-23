@@ -87,3 +87,24 @@ export async function generateReport(interviewId) {
 export function getReportDownloadUrl(interviewId) {
   return `/api/reports/${interviewId}/download`;
 }
+
+// Invitations
+export async function sendInvitations(emails, message = "") {
+  const { data } = await api.post("/invitations/send", { emails, message });
+  return data;
+}
+
+export async function listInvitations() {
+  const { data } = await api.get("/invitations");
+  return data.invitations;
+}
+
+export async function getInvitation(token) {
+  const { data } = await api.get(`/invitations/${token}`);
+  return data;
+}
+
+export async function startInviteSession(token, name = "") {
+  const { data } = await api.post(`/invitations/${token}/start`, { name });
+  return data;
+}

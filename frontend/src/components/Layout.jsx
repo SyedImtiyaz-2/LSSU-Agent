@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { NavLink, useNavigate, useLocation } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   Mic,
@@ -8,6 +8,7 @@ import {
   PanelLeft,
   LogOut,
   Database,
+  Mail,
   Menu,
   X,
 } from "lucide-react";
@@ -16,6 +17,7 @@ import { logout, getUser } from "../api";
 const NAV_ITEMS = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard" },
   { to: "/interviews", icon: Mic, label: "Sessions" },
+  { to: "/invitations", icon: Mail, label: "Invitations" },
   { to: "/knowledge-base", icon: Database, label: "Knowledge Base" },
   { to: "/reports", icon: FileText, label: "Reports" },
 ];
@@ -24,7 +26,6 @@ export default function Layout({ children }) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const navigate = useNavigate();
-  const location = useLocation();
   const user = getUser();
 
   const handleLogout = () => {

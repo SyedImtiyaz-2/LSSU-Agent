@@ -7,6 +7,8 @@ import InterviewRoom from "./pages/InterviewRoom";
 import InterviewsPage from "./pages/InterviewsPage";
 import KnowledgeBasePage from "./pages/KnowledgeBasePage";
 import ReportsPage from "./pages/ReportsPage";
+import InvitationsPage from "./pages/InvitationsPage";
+import InviteLandingPage from "./pages/InviteLandingPage";
 
 function ProtectedRoute({ children }) {
   if (!isAuthenticated()) return <Navigate to="/login" replace />;
@@ -17,6 +19,8 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      {/* Public invite page - no login needed */}
+      <Route path="/invite/:token" element={<InviteLandingPage />} />
       <Route
         path="/*"
         element={
@@ -28,6 +32,7 @@ export default function App() {
                 <Route path="/interview/:interviewId" element={<InterviewRoom />} />
                 <Route path="/knowledge-base" element={<KnowledgeBasePage />} />
                 <Route path="/reports" element={<ReportsPage />} />
+                <Route path="/invitations" element={<InvitationsPage />} />
               </Routes>
             </Layout>
           </ProtectedRoute>
