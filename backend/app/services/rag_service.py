@@ -1,6 +1,6 @@
 import os
 import logging
-from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, Settings
+from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, Document, Settings
 from llama_index.llms.openai import OpenAI
 from llama_index.embeddings.openai import OpenAIEmbedding
 from app.config import OPENAI_API_KEY, OPENAI_MODEL, UPLOAD_DIR
@@ -15,23 +15,64 @@ Settings.embed_model = OpenAIEmbedding(model="text-embedding-3-small", api_key=O
 _index: VectorStoreIndex | None = None
 
 
+def _fetch_documents_from_supabase() -> list[Document]:
+    """Fetch document content from Supabase when local files aren't available.
+    This is the primary path for the worker container which has no local uploads."""
+    try:
+        from app.services.supabase_service import get_client
+        sb = get_client()
+        result = sb.table("documents").select("id, filename, content").execute()
+        if not result.data:
+            logger.info("No documents found in Supabase")
+            return []
+
+        documents = []
+        for row in result.data:
+            content = row.get("content", "")
+            if not content or not content.strip():
+                continue
+            doc = Document(
+                text=content,
+                metadata={
+                    "source": row.get("filename", "unknown"),
+                    "doc_id": row.get("id", ""),
+                },
+            )
+            documents.append(doc)
+
+        logger.info(f"Fetched {len(documents)} documents from Supabase")
+        return documents
+    except Exception as e:
+        logger.error(f"Failed to fetch documents from Supabase: {e}")
+        return []
+
+
 def build_index() -> VectorStoreIndex | None:
-    """Build or rebuild the vector index from all files in uploads dir."""
+    """Build or rebuild the vector index from local files or Supabase content."""
     global _index
+
+    # Try local files first (works on web service container)
     files = [
         os.path.join(UPLOAD_DIR, f)
         for f in os.listdir(UPLOAD_DIR)
-        if f.endswith((".pdf", ".txt", ".docx", ".md")) and not f.startswith(".")
+        if f.endswith((".pdf", ".txt", ".docx", ".md", ".html", ".htm")) and not f.startswith(".")
     ]
-    if not files:
-        logger.info("No documents found in uploads dir, index is empty")
+
+    if files:
+        logger.info(f"Building RAG index from {len(files)} local files")
+        reader = SimpleDirectoryReader(input_files=files)
+        documents = reader.load_data()
+    else:
+        # Fallback: fetch from Supabase (worker container path)
+        logger.info("No local files found, fetching from Supabase")
+        documents = _fetch_documents_from_supabase()
+
+    if not documents:
+        logger.info("No documents available from any source, index is empty")
         _index = None
         return None
 
-    logger.info(f"Building RAG index from {len(files)} documents: {[os.path.basename(f) for f in files]}")
-    reader = SimpleDirectoryReader(input_files=files)
-    documents = reader.load_data()
-    logger.info(f"Loaded {len(documents)} document chunks")
+    logger.info(f"Building RAG index from {len(documents)} document chunks")
     _index = VectorStoreIndex.from_documents(documents)
     logger.info("RAG index built successfully")
     return _index

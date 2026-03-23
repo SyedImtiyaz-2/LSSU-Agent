@@ -210,7 +210,9 @@ class InterviewAgent(Agent):
         # Update agent instructions based on current state
         if mgr.state == InterviewState.CLOSING:
             await self.update_instructions(
-                f"{SYSTEM_PROMPT}\n\nSay: \"{CLOSING_MESSAGE}\" Keep it brief."
+                f"{SYSTEM_PROMPT}\n\n"
+                f"Wrap up warmly. Say something like: \"{CLOSING_MESSAGE}\"\n"
+                f"You can personalize slightly using their name ({mgr.name}) but keep it to 2 sentences max."
             )
             asyncio.create_task(self._save_results())
         elif mgr.state == InterviewState.FOLLOWUP_Q1:
@@ -220,15 +222,17 @@ class InterviewAgent(Agent):
             if next_q:
                 await self.update_instructions(
                     f"{SYSTEM_PROMPT}\n\n"
-                    f"Briefly say you have a few follow-up questions, then ask: \"{next_q}\"\n"
-                    f"Keep acknowledgment to 1 sentence max."
+                    f"Transition naturally by saying something like 'I have a few more specific questions based on what you've shared' "
+                    f"then ask: \"{next_q}\"\n"
+                    f"Keep the transition to 1 sentence max before the question."
                 )
         else:
             next_q = mgr.get_current_question()
             if next_q:
                 await self.update_instructions(
                     f"{SYSTEM_PROMPT}\n\n"
-                    f"Acknowledge briefly (1 sentence), then ask: \"{next_q}\""
+                    f"Use a varied, natural acknowledgment (see examples above), then ask: \"{next_q}\"\n"
+                    f"Do not repeat an acknowledgment you've already used in this conversation."
                 )
 
     async def _save_results(self):
