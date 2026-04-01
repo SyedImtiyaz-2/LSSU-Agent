@@ -1,8 +1,10 @@
 import { useState, useRef, useEffect } from "react";
-import { Send, Loader2, Database, Bot, User } from "lucide-react";
+import { Send, Loader2, Database, Bot, User, CalendarCheck } from "lucide-react";
 import { sendChatMessage } from "../api";
 
-function Message({ role, content, ragUsed }) {
+const CAL_LINK = "https://cal.com/ceo-fastship/15min";
+
+function Message({ role, content, ragUsed, suggestCall }) {
   const isUser = role === "user";
   return (
     <div className={`flex gap-3 ${isUser ? "flex-row-reverse" : "flex-row"}`}>
@@ -20,7 +22,7 @@ function Message({ role, content, ragUsed }) {
       </div>
 
       {/* Bubble */}
-      <div className={`max-w-[75%] ${isUser ? "items-end" : "items-start"} flex flex-col gap-1`}>
+      <div className={`max-w-[75%] ${isUser ? "items-end" : "items-start"} flex flex-col gap-2`}>
         <div
           className={`px-4 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
             isUser
@@ -30,7 +32,18 @@ function Message({ role, content, ragUsed }) {
         >
           {content}
         </div>
-        {!isUser && ragUsed && (
+        {!isUser && suggestCall && (
+          <a
+            href={CAL_LINK}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white text-black text-sm font-medium hover:bg-neutral-200 transition-colors"
+          >
+            <CalendarCheck className="w-4 h-4" />
+            Book a 15-min call
+          </a>
+        )}
+        {!isUser && ragUsed && !suggestCall && (
           <div className="flex items-center gap-1 text-xs text-neutral-600">
             <Database className="w-3 h-3" />
             <span>Knowledge base used</span>
@@ -92,7 +105,7 @@ export default function ChatPage() {
       const res = await sendChatMessage(text, history, sessionId.current);
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: res.reply, ragUsed: res.rag_used },
+        { role: "assistant", content: res.reply, ragUsed: res.rag_used, suggestCall: res.suggest_call },
       ]);
     } catch (err) {
       setMessages((prev) => [
@@ -129,7 +142,7 @@ export default function ChatPage() {
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-6 py-6 space-y-5">
         {messages.map((msg, i) => (
-          <Message key={i} role={msg.role} content={msg.content} ragUsed={msg.ragUsed} />
+          <Message key={i} role={msg.role} content={msg.content} ragUsed={msg.ragUsed} suggestCall={msg.suggestCall} />
         ))}
         {loading && <TypingIndicator />}
         <div ref={bottomRef} />

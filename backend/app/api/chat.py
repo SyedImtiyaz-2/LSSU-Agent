@@ -8,6 +8,8 @@ from app.config import OPENAI_API_KEY, OPENAI_MODEL
 router = APIRouter(tags=["chat"])
 logger = logging.getLogger("chat")
 
+CAL_LINK = "https://cal.com/ceo-fastship/15min"
+
 CHAT_SYSTEM_PROMPT = """You are an AI assistant for LSSU (Lake Superior State University). \
 You help staff understand how AI can improve their workflows, answer questions about \
 university processes, and provide guidance based on the knowledge base.
@@ -15,8 +17,10 @@ university processes, and provide guidance based on the knowledge base.
 Guidelines:
 - Be helpful, concise, and professional
 - If the knowledge base context is provided, ground your answer in it
-- If you don't know something, say so clearly
-- Keep responses focused and actionable"""
+- If you cannot confidently answer the question, say so honestly and end your reply \
+with exactly this line on a new line: SUGGEST_CALL
+- Keep responses focused and actionable
+- Do NOT make up information you are not sure about"""
 
 
 class ChatMessage(BaseModel):
@@ -34,11 +38,11 @@ class ChatResponse(BaseModel):
     reply: str
     session_id: Optional[str] = None
     rag_used: bool = False
+    suggest_call: bool = False
 
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
-    # Pull relevant context from RAG
     context = query_context(req.message, top_k=3)
     rag_used = bool(context and context.strip() and context != "Empty Response")
 
@@ -47,7 +51,6 @@ async def chat(req: ChatRequest):
         system += f"\n\nKnowledge Base Context:\n{context}"
 
     messages = [{"role": "system", "content": system}]
-    # Include last 10 messages of history for context
     for msg in req.history[-10:]:
         messages.append({"role": msg.role, "content": msg.content})
     messages.append({"role": "user", "content": req.message})
@@ -59,7 +62,17 @@ async def chat(req: ChatRequest):
         messages=messages,
         temperature=0.7,
     )
-    reply = response.choices[0].message.content.strip()
-    logger.info(f"Chat reply generated (rag_used={rag_used}): {reply[:80]}")
+    raw_reply = response.choices[0].message.content.strip()
 
-    return ChatResponse(reply=reply, session_id=req.session_id, rag_used=rag_used)
+    # Detect if agent signals it can't answer
+    suggest_call = "SUGGEST_CALL" in raw_reply
+    reply = raw_reply.replace("SUGGEST_CALL", "").strip()
+
+    logger.info(f"Chat reply (rag_used={rag_used}, suggest_call={suggest_call}): {reply[:80]}")
+
+    return ChatResponse(
+        reply=reply,
+        session_id=req.session_id,
+        rag_used=rag_used,
+        suggest_call=suggest_call,
+    )

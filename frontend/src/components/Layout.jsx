@@ -18,7 +18,7 @@ import { logout, getUser } from "../api";
 const NAV_ITEMS = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard" },
   { to: "/interviews", icon: Mic, label: "Sessions" },
-  { to: "/chat", icon: MessageSquare, label: "Chat" },
+  { to: "/chat", icon: MessageSquare, label: "Chatbot" },
   { to: "/invitations", icon: Mail, label: "Invitations" },
   { to: "/knowledge-base", icon: Database, label: "Knowledge Base" },
   { to: "/reports", icon: FileText, label: "Reports" },
