@@ -78,6 +78,11 @@ export async function deleteDocument(id) {
   return data;
 }
 
+export async function crawlUrl(url) {
+  const { data } = await api.post("/documents/crawl", { url });
+  return data;
+}
+
 // Reports
 export async function generateReport(interviewId) {
   const { data } = await api.post(`/reports/${interviewId}/generate`);

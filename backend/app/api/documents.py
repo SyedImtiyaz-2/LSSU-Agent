@@ -1,7 +1,8 @@
 import os
 import uuid
 import logging
-from fastapi import APIRouter, UploadFile, File
+from fastapi import APIRouter, UploadFile, File, HTTPException
+from pydantic import BaseModel
 from app.config import UPLOAD_DIR
 from app.services import supabase_service, rag_service
 
@@ -68,6 +69,51 @@ async def upload_document(file: UploadFile = File(...)):
     rag_service.build_index()
 
     return {"id": file_id, "filename": file.filename, "status": "indexed"}
+
+
+class CrawlRequest(BaseModel):
+    url: str
+
+
+@router.post("/documents/crawl")
+async def crawl_document(req: CrawlRequest):
+    """Crawl a URL with crawl4ai, extract text, and add it to the knowledge base."""
+    try:
+        from crawl4ai import AsyncWebCrawler
+        async with AsyncWebCrawler() as crawler:
+            result = await crawler.arun(url=req.url)
+            text_content = result.markdown or result.cleaned_html or ""
+    except Exception as e:
+        logger.error(f"Crawl failed for {req.url}: {e}")
+        raise HTTPException(status_code=422, detail=f"Failed to crawl URL: {e}")
+
+    if not text_content.strip():
+        raise HTTPException(status_code=422, detail="No content extracted from URL")
+
+    # Derive a filename from the URL
+    from urllib.parse import urlparse
+    parsed = urlparse(req.url)
+    slug = (parsed.netloc + parsed.path).strip("/").replace("/", "_")[:60] or "crawled"
+    filename = f"{slug}.md"
+
+    file_id = str(uuid.uuid4())
+    safe_name = f"{file_id}.md"
+    filepath = os.path.join(UPLOAD_DIR, safe_name)
+    with open(filepath, "w", encoding="utf-8") as f:
+        f.write(text_content)
+
+    record = supabase_service.save_document_record({
+        "id": file_id,
+        "filename": filename,
+        "stored_name": safe_name,
+        "file_size": len(text_content.encode("utf-8")),
+        "content": text_content,
+        "status": "indexed",
+    })
+
+    rag_service.build_index()
+    logger.info(f"Crawled {req.url} → {len(text_content)} chars, saved as {filename}")
+    return {"id": file_id, "filename": filename, "status": "indexed", "url": req.url}
 
 
 @router.get("/documents")

@@ -1,11 +1,14 @@
 import { useState, useEffect } from "react";
-import { FileText, Trash2, Loader2, Database } from "lucide-react";
+import { FileText, Trash2, Loader2, Database, Globe } from "lucide-react";
 import DocumentUploader from "../components/DocumentUploader";
-import { listDocuments, deleteDocument } from "../api";
+import { listDocuments, deleteDocument, crawlUrl } from "../api";
 
 export default function KnowledgeBasePage() {
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [urlInput, setUrlInput] = useState("");
+  const [crawling, setCrawling] = useState(false);
+  const [crawlError, setCrawlError] = useState("");
 
   const fetchDocs = async () => {
     setLoading(true);
@@ -22,6 +25,22 @@ export default function KnowledgeBasePage() {
   useEffect(() => {
     fetchDocs();
   }, []);
+
+  const handleCrawl = async () => {
+    const url = urlInput.trim();
+    if (!url) return;
+    setCrawling(true);
+    setCrawlError("");
+    try {
+      await crawlUrl(url);
+      setUrlInput("");
+      fetchDocs();
+    } catch (err) {
+      setCrawlError(err?.response?.data?.detail || "Failed to crawl URL");
+    } finally {
+      setCrawling(false);
+    }
+  };
 
   const handleDelete = async (id) => {
     if (!confirm("Remove this document from the knowledge base?")) return;
@@ -45,6 +64,35 @@ export default function KnowledgeBasePage() {
         </div>
 
         <DocumentUploader onUploaded={fetchDocs} />
+
+        {/* URL Crawler */}
+        <div className="mt-6 border border-neutral-800 rounded-2xl bg-neutral-950 p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <Globe className="w-4 h-4 text-neutral-400" />
+            <span className="text-sm font-semibold text-white">Crawl a URL</span>
+            <span className="text-xs text-neutral-600 ml-1">— paste any webpage to extract and index its content</span>
+          </div>
+          <div className="flex gap-3">
+            <input
+              type="url"
+              value={urlInput}
+              onChange={(e) => setUrlInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleCrawl()}
+              placeholder="https://lssu.edu/programs/nursing"
+              className="flex-1 bg-neutral-900 border border-neutral-800 rounded-xl px-4 py-2.5 text-sm text-white placeholder-neutral-600 focus:outline-none focus:border-neutral-600 transition-colors"
+              disabled={crawling}
+            />
+            <button
+              onClick={handleCrawl}
+              disabled={!urlInput.trim() || crawling}
+              className="px-5 py-2.5 bg-white text-black text-sm font-semibold rounded-xl hover:bg-neutral-200 transition-colors disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {crawling ? <Loader2 className="w-4 h-4 animate-spin" /> : <Globe className="w-4 h-4" />}
+              {crawling ? "Crawling…" : "Crawl"}
+            </button>
+          </div>
+          {crawlError && <p className="text-xs text-red-400 mt-2">{crawlError}</p>}
+        </div>
 
         <div className="mt-10">
           <h2 className="text-sm text-neutral-500 uppercase tracking-widest mb-4 font-semibold">
