@@ -1,10 +1,43 @@
 import os
 import uuid
+import logging
 from fastapi import APIRouter, UploadFile, File
 from app.config import UPLOAD_DIR
 from app.services import supabase_service, rag_service
 
 router = APIRouter(tags=["documents"])
+logger = logging.getLogger("documents")
+
+
+def _extract_text(filepath: str, filename: str) -> str:
+    """Extract text content from uploaded file for RAG storage."""
+    try:
+        ext = os.path.splitext(filename)[1].lower()
+        if ext in (".txt", ".md"):
+            with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+                return f.read()
+        elif ext == ".pdf":
+            from llama_index.core import SimpleDirectoryReader
+            reader = SimpleDirectoryReader(input_files=[filepath])
+            docs = reader.load_data()
+            return "\n\n".join(doc.text for doc in docs)
+        elif ext in (".html", ".htm"):
+            with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+                raw = f.read()
+            # Strip HTML tags
+            import re
+            return re.sub(r"<[^>]+>", " ", raw).strip()
+        elif ext == ".docx":
+            from llama_index.core import SimpleDirectoryReader
+            reader = SimpleDirectoryReader(input_files=[filepath])
+            docs = reader.load_data()
+            return "\n\n".join(doc.text for doc in docs)
+        else:
+            with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+                return f.read()
+    except Exception as e:
+        logger.error(f"Failed to extract text from {filename}: {e}")
+        return ""
 
 
 @router.post("/documents/upload")
@@ -18,11 +51,16 @@ async def upload_document(file: UploadFile = File(...)):
     with open(filepath, "wb") as f:
         f.write(content)
 
+    # Extract text content and store in DB (so agent worker can access via Supabase)
+    text_content = _extract_text(filepath, file.filename)
+    logger.info(f"Extracted {len(text_content)} chars from {file.filename}")
+
     record = supabase_service.save_document_record({
         "id": file_id,
         "filename": file.filename,
         "stored_name": safe_name,
         "file_size": len(content),
+        "content": text_content,
         "status": "indexed",
     })
 

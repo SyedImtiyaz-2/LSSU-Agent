@@ -9,6 +9,7 @@ import KnowledgeBasePage from "./pages/KnowledgeBasePage";
 import ReportsPage from "./pages/ReportsPage";
 import InvitationsPage from "./pages/InvitationsPage";
 import InviteLandingPage from "./pages/InviteLandingPage";
+import ChatPage from "./pages/ChatPage";
 
 function ProtectedRoute({ children }) {
   if (!isAuthenticated()) return <Navigate to="/login" replace />;
@@ -33,6 +34,7 @@ export default function App() {
                 <Route path="/knowledge-base" element={<KnowledgeBasePage />} />
                 <Route path="/reports" element={<ReportsPage />} />
                 <Route path="/invitations" element={<InvitationsPage />} />
+                <Route path="/chat" element={<ChatPage />} />
               </Routes>
             </Layout>
           </ProtectedRoute>

@@ -88,6 +88,12 @@ export function getReportDownloadUrl(interviewId) {
   return `/api/reports/${interviewId}/download`;
 }
 
+// Chat
+export async function sendChatMessage(message, history = [], sessionId = null) {
+  const { data } = await api.post("/chat", { message, history, session_id: sessionId });
+  return data;
+}
+
 // Invitations
 export async function sendInvitations(emails, message = "") {
   const { data } = await api.post("/invitations/send", { emails, message });

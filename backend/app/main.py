@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-from app.api import auth, token, documents, interviews, reports, invitations
+from app.api import auth, token, documents, interviews, reports, invitations, chat
 from app.config import REPORT_DIR
 
 app = FastAPI(title="LSSU Interview Agent API")
@@ -23,6 +23,7 @@ app.include_router(documents.router, prefix="/api")
 app.include_router(interviews.router, prefix="/api")
 app.include_router(reports.router, prefix="/api")
 app.include_router(invitations.router, prefix="/api")
+app.include_router(chat.router, prefix="/api")
 
 app.mount("/reports", StaticFiles(directory=REPORT_DIR), name="reports")
 

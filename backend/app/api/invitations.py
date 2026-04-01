@@ -67,9 +67,13 @@ async def send_invitations(req: InvitationRequest, request: Request):
 @router.get("/invitations")
 async def list_invitations():
     """List all sent invitations."""
-    sb = get_client()
-    result = sb.table("invitations").select("*").order("sent_at", desc=True).execute()
-    return {"invitations": result.data or []}
+    try:
+        sb = get_client()
+        result = sb.table("invitations").select("*").order("sent_at", desc=True).execute()
+        return {"invitations": result.data or []}
+    except Exception as e:
+        logger.error(f"Failed to list invitations: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/invitations/{token}")
