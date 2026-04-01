@@ -9,6 +9,7 @@ router = APIRouter(tags=["chat"])
 logger = logging.getLogger("chat")
 
 CAL_LINK = "https://cal.com/ceo-fastship/15min"
+SUPABASE_SCHEMA = "issu"
 
 CHAT_SYSTEM_PROMPT = """You are an AI assistant for LSSU (Lake Superior State University). \
 You help staff understand how AI can improve their workflows, answer questions about \
@@ -23,8 +24,14 @@ with exactly this line on a new line: SUGGEST_CALL
 - Do NOT make up information you are not sure about"""
 
 
+class LeadInfo(BaseModel):
+    name: str
+    phone: str
+    email: str
+
+
 class ChatMessage(BaseModel):
-    role: str  # "user" or "assistant"
+    role: str
     content: str
 
 
@@ -32,6 +39,7 @@ class ChatRequest(BaseModel):
     message: str
     session_id: Optional[str] = None
     history: List[ChatMessage] = []
+    lead: Optional[LeadInfo] = None
 
 
 class ChatResponse(BaseModel):
@@ -41,8 +49,67 @@ class ChatResponse(BaseModel):
     suggest_call: bool = False
 
 
+def _get_sb():
+    from app.services.supabase_service import get_client
+    return get_client()
+
+
+def _ensure_session(session_id: str, lead: Optional[LeadInfo]):
+    try:
+        sb = _get_sb()
+        existing = sb.schema(SUPABASE_SCHEMA).table("chat_sessions").select("session_id").eq("session_id", session_id).execute()
+        if not existing.data:
+            row = {
+                "session_id": session_id,
+                "page_slug": "agent-chatbot",
+                "icp_id": None,
+                "icp_name": "Agent Chatbot",
+                "referral_source": "agent",
+            }
+            if lead:
+                row["name"] = lead.name
+                row["phone"] = lead.phone
+                row["email"] = lead.email
+            sb.schema(SUPABASE_SCHEMA).table("chat_sessions").insert(row).execute()
+        elif lead:
+            # Update lead info if not yet saved
+            sb.schema(SUPABASE_SCHEMA).table("chat_sessions").update({
+                "name": lead.name,
+                "phone": lead.phone,
+                "email": lead.email,
+            }).eq("session_id", session_id).execute()
+    except Exception as e:
+        logger.warning(f"Session upsert failed (non-critical): {e}")
+
+
+def _log_message(session_id: str, role: str, content: str, rag_score: float = None):
+    try:
+        sb = _get_sb()
+        sb.schema(SUPABASE_SCHEMA).table("chat_messages").insert({
+            "session_id": session_id,
+            "role": role,
+            "content": content,
+            "rag_score": rag_score,
+        }).execute()
+        # Increment message count
+        existing = sb.schema(SUPABASE_SCHEMA).table("chat_sessions").select("message_count").eq("session_id", session_id).execute().data
+        count = (existing[0].get("message_count") or 0) + 1 if existing else 1
+        sb.schema(SUPABASE_SCHEMA).table("chat_sessions").update({"message_count": count}).eq("session_id", session_id).execute()
+    except Exception as e:
+        logger.warning(f"Message log failed (non-critical): {e}")
+
+
 @router.post("/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
+    session_id = req.session_id or f"agent-{__import__('uuid').uuid4()}"
+
+    # Upsert session + lead info in Supabase
+    _ensure_session(session_id, req.lead)
+
+    # Log user message
+    _log_message(session_id, "user", req.message)
+
+    # RAG
     context = query_context(req.message, top_k=3)
     rag_used = bool(context and context.strip() and context != "Empty Response")
 
@@ -64,15 +131,17 @@ async def chat(req: ChatRequest):
     )
     raw_reply = response.choices[0].message.content.strip()
 
-    # Detect if agent signals it can't answer
     suggest_call = "SUGGEST_CALL" in raw_reply
     reply = raw_reply.replace("SUGGEST_CALL", "").strip()
 
-    logger.info(f"Chat reply (rag_used={rag_used}, suggest_call={suggest_call}): {reply[:80]}")
+    # Log assistant reply
+    _log_message(session_id, "assistant", reply, rag_score=1.0 if rag_used else 0.0)
+
+    logger.info(f"Chat reply (rag={rag_used}, suggest_call={suggest_call}): {reply[:80]}")
 
     return ChatResponse(
         reply=reply,
-        session_id=req.session_id,
+        session_id=session_id,
         rag_used=rag_used,
         suggest_call=suggest_call,
     )

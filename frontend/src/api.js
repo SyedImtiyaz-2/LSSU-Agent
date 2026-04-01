@@ -89,8 +89,8 @@ export function getReportDownloadUrl(interviewId) {
 }
 
 // Chat
-export async function sendChatMessage(message, history = [], sessionId = null) {
-  const { data } = await api.post("/chat", { message, history, session_id: sessionId });
+export async function sendChatMessage(message, history = [], sessionId = null, lead = null) {
+  const { data } = await api.post("/chat", { message, history, session_id: sessionId, lead });
   return data;
 }
 
