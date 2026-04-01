@@ -1,16 +1,27 @@
 import os
 import logging
-from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, Document, Settings
-from llama_index.llms.openai import OpenAI
-from llama_index.embeddings.openai import OpenAIEmbedding
 from app.config import OPENAI_API_KEY, OPENAI_MODEL, UPLOAD_DIR
 
 logger = logging.getLogger("rag-service")
 
-os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
+# Set lazily to avoid crashing on import if env vars not yet available
+_settings_initialized = False
 
-Settings.llm = OpenAI(model=OPENAI_MODEL, api_key=OPENAI_API_KEY)
-Settings.embed_model = OpenAIEmbedding(model="text-embedding-3-small", api_key=OPENAI_API_KEY)
+
+def _init_settings():
+    global _settings_initialized
+    if _settings_initialized:
+        return
+    from llama_index.core import Settings
+    from llama_index.llms.openai import OpenAI
+    from llama_index.embeddings.openai import OpenAIEmbedding
+    if OPENAI_API_KEY:
+        os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
+        Settings.llm = OpenAI(model=OPENAI_MODEL, api_key=OPENAI_API_KEY)
+        Settings.embed_model = OpenAIEmbedding(model="text-embedding-3-small", api_key=OPENAI_API_KEY)
+    _settings_initialized = True
+
+from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, Document
 
 _index: VectorStoreIndex | None = None
 
@@ -48,6 +59,7 @@ def _fetch_documents_from_supabase() -> list[Document]:
 
 
 def build_index() -> VectorStoreIndex | None:
+    _init_settings()
     """Build or rebuild the vector index from local files or Supabase content."""
     global _index
 
