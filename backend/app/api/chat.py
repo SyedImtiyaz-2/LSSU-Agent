@@ -99,6 +99,36 @@ def _log_message(session_id: str, role: str, content: str, rag_score: float = No
         logger.warning(f"Message log failed (non-critical): {e}")
 
 
+class LeadUpsertRequest(BaseModel):
+    session_id: str
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+
+
+@router.post("/chat/lead")
+def upsert_lead(req: LeadUpsertRequest):
+    """Create or update session lead info — called after each lead question answered."""
+    try:
+        sb = _get_sb()
+        existing = sb.schema(SUPABASE_SCHEMA).table("chat_sessions").select("session_id").eq("session_id", req.session_id).execute()
+        row = {k: v for k, v in {"name": req.name, "phone": req.phone, "email": req.email}.items() if v is not None}
+        if not existing.data:
+            sb.schema(SUPABASE_SCHEMA).table("chat_sessions").insert({
+                "session_id": req.session_id,
+                "page_slug": "agent-chatbot",
+                "icp_name": "Agent Chatbot",
+                "referral_source": "agent",
+                **row,
+            }).execute()
+        else:
+            if row:
+                sb.schema(SUPABASE_SCHEMA).table("chat_sessions").update(row).eq("session_id", req.session_id).execute()
+    except Exception as e:
+        logger.warning(f"Lead upsert failed: {e}")
+    return {"status": "ok"}
+
+
 @router.post("/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
     session_id = req.session_id or f"agent-{__import__('uuid').uuid4()}"

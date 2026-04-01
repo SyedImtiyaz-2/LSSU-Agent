@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { Send, Loader2, Database, Bot, User, CalendarCheck } from "lucide-react";
-import { sendChatMessage } from "../api";
+import { sendChatMessage, upsertChatLead } from "../api";
 
 const CAL_LINK = "https://cal.com/ceo-fastship/15min";
 
@@ -95,6 +95,7 @@ export default function ChatPage() {
       updated.name = text;
       setLead(updated);
       addMessage("user", text);
+      upsertChatLead(sessionId.current, { name: text });
       const q = typeof LEAD_STEPS[1].question === "function"
         ? LEAD_STEPS[1].question(text)
         : LEAD_STEPS[1].question;
@@ -104,12 +105,14 @@ export default function ChatPage() {
       updated.phone = text;
       setLead(updated);
       addMessage("user", text);
+      upsertChatLead(sessionId.current, { phone: text });
       setTimeout(() => addMessage("assistant", LEAD_STEPS[2].question), 400);
       setLeadStep(2);
     } else if (leadStep === 2) {
       updated.email = text;
       setLead(updated);
       addMessage("user", text);
+      upsertChatLead(sessionId.current, { email: text });
       setTimeout(() => addMessage("assistant",
         `Thanks ${updated.name}! How can I help you today?`
       ), 400);

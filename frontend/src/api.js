@@ -94,6 +94,11 @@ export async function sendChatMessage(message, history = [], sessionId = null, l
   return data;
 }
 
+export async function upsertChatLead(sessionId, fields) {
+  const { data } = await api.post("/chat/lead", { session_id: sessionId, ...fields });
+  return data;
+}
+
 // Invitations
 export async function sendInvitations(emails, message = "") {
   const { data } = await api.post("/invitations/send", { emails, message });
