@@ -4,7 +4,23 @@ import { sendChatMessage, upsertChatLead } from "../api";
 
 const CAL_LINK = "https://cal.com/ceo-fastship/15min";
 
-// Lead collection steps before chat opens
+const ICP_OPTIONS = [
+  { id: 1,  name: "Traditional Student",           full: "Traditional Prospective Student" },
+  { id: 2,  name: "Transfer Student",              full: "Transfer Prospective Student" },
+  { id: 3,  name: "Transfer Back Student",         full: "Transfer Back Prospective Student" },
+  { id: 4,  name: "Canadian Student",              full: "Canadian Cross Border Student" },
+  { id: 5,  name: "Charter School Student",        full: "Charter School Student" },
+  { id: 6,  name: "Indigenous Scholar",            full: "Indigenous and Anishinaabe Scholar" },
+  { id: 7,  name: "Cannabis / Chemistry",          full: "Cannabis Business & Chemistry Student" },
+  { id: 8,  name: "Fisheries & Wildlife",          full: "Fisheries & Wildlife Student" },
+  { id: 9,  name: "Fire Science",                  full: "Fire Science Student" },
+  { id: 10, name: "Nursing",                       full: "Nursing Student" },
+  { id: 11, name: "Robotics Engineering",          full: "Robotics Engineering Student" },
+  { id: 12, name: "Hockey Athlete (Men's)",        full: "Collegiate Hockey Athlete (Men's)" },
+  { id: 13, name: "Hockey Athlete (Women's)",      full: "Collegiate Hockey Athlete (Women's)" },
+];
+
+// Lead collection steps before chat opens (text-based)
 const LEAD_STEPS = [
   { key: "name",  question: "Hi! I'm the LSSU AI Assistant. Before we begin, could you tell me your name?" },
   { key: "phone", question: (name) => `Nice to meet you, ${name}! What's your phone number?` },
@@ -62,15 +78,42 @@ function TypingIndicator() {
   );
 }
 
+function IcpSelector({ onSelect }) {
+  return (
+    <div className="flex gap-3">
+      <div className="w-8 h-8 rounded-full bg-neutral-800 border border-neutral-700 flex items-center justify-center flex-shrink-0">
+        <Bot className="w-4 h-4 text-neutral-300" />
+      </div>
+      <div className="flex flex-col gap-2 max-w-[80%]">
+        <div className="px-4 py-2.5 rounded-2xl rounded-tl-sm text-sm bg-neutral-900 border border-neutral-800 text-neutral-100">
+          Which program are you interested in?
+        </div>
+        <div className="grid grid-cols-2 gap-1.5">
+          {ICP_OPTIONS.map((icp) => (
+            <button
+              key={icp.id}
+              onClick={() => onSelect(icp)}
+              className="px-3 py-1.5 text-xs rounded-xl bg-neutral-800 border border-neutral-700 text-neutral-200 hover:bg-white hover:text-black hover:border-white transition-all text-left"
+            >
+              {icp.name}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ChatPage() {
   const [messages, setMessages] = useState([
     { role: "assistant", content: LEAD_STEPS[0].question },
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  // Lead collection state: 0=asking name, 1=asking phone, 2=asking email, 3=done
+  // 0=name, 1=phone, 2=email, 3=icp selection, 4=chat open
   const [leadStep, setLeadStep] = useState(0);
-  const [lead, setLead] = useState({ name: "", phone: "", email: "" });
+  const [lead, setLead] = useState({ name: "", phone: "", email: "", icp_id: null, icp_name: "" });
+  const [showIcpSelector, setShowIcpSelector] = useState(false);
 
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
@@ -78,10 +121,10 @@ export default function ChatPage() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, loading]);
+  }, [messages, loading, showIcpSelector]);
 
   useEffect(() => {
-    inputRef.current?.focus();
+    if (leadStep !== 3) inputRef.current?.focus();
   }, [leadStep]);
 
   const addMessage = (role, content, extras = {}) => {
@@ -113,11 +156,21 @@ export default function ChatPage() {
       setLead(updated);
       addMessage("user", text);
       upsertChatLead(sessionId.current, { email: text });
-      setTimeout(() => addMessage("assistant",
-        `Thanks ${updated.name}! How can I help you today?`
-      ), 400);
+      setTimeout(() => setShowIcpSelector(true), 400);
       setLeadStep(3);
     }
+  };
+
+  const handleIcpSelect = (icp) => {
+    const updated = { ...lead, icp_id: icp.id, icp_name: icp.full };
+    setLead(updated);
+    setShowIcpSelector(false);
+    addMessage("user", icp.name);
+    upsertChatLead(sessionId.current, { icp_id: icp.id, icp_name: icp.full });
+    setTimeout(() => addMessage("assistant",
+      `Great! I'll focus on ${icp.full}. How can I help you today?`
+    ), 400);
+    setLeadStep(4);
   };
 
   const sendChat = async (text) => {
@@ -145,7 +198,7 @@ export default function ChatPage() {
 
     if (leadStep < 3) {
       handleLeadStep(text);
-    } else {
+    } else if (leadStep === 4) {
       sendChat(text);
     }
   };
@@ -161,6 +214,7 @@ export default function ChatPage() {
     leadStep === 0 ? "Your name..." :
     leadStep === 1 ? "Your phone number..." :
     leadStep === 2 ? "Your email address..." :
+    leadStep === 3 ? "Select a program above..." :
     "Ask anything about LSSU...";
 
   return (
@@ -171,10 +225,10 @@ export default function ChatPage() {
           <h1 className="text-base font-semibold text-white">AI Assistant</h1>
           <p className="text-xs text-neutral-500 mt-0.5">Ask questions · Backed by your knowledge base</p>
         </div>
-        {leadStep === 3 && (
+        {leadStep >= 4 && (
           <div className="text-right">
             <p className="text-xs text-neutral-400">{lead.name}</p>
-            <p className="text-xs text-neutral-600">{lead.email}</p>
+            <p className="text-xs text-neutral-600">{lead.icp_name || lead.email}</p>
           </div>
         )}
       </div>
@@ -185,6 +239,7 @@ export default function ChatPage() {
           <Message key={i} role={msg.role} content={msg.content}
             ragUsed={msg.ragUsed} suggestCall={msg.suggestCall} />
         ))}
+        {showIcpSelector && <IcpSelector onSelect={handleIcpSelect} />}
         {loading && <TypingIndicator />}
         <div ref={bottomRef} />
       </div>
@@ -201,11 +256,11 @@ export default function ChatPage() {
             rows={1}
             className="flex-1 resize-none bg-neutral-900 border border-neutral-800 rounded-xl px-4 py-3 text-sm text-white placeholder-neutral-600 focus:outline-none focus:border-neutral-600 transition-colors max-h-32 overflow-y-auto"
             style={{ lineHeight: "1.5" }}
-            disabled={loading}
+            disabled={loading || leadStep === 3}
           />
           <button
             onClick={handleSend}
-            disabled={!input.trim() || loading}
+            disabled={!input.trim() || loading || leadStep === 3}
             className="w-10 h-10 rounded-xl bg-white text-black flex items-center justify-center hover:bg-neutral-200 transition-colors disabled:opacity-30 disabled:cursor-not-allowed flex-shrink-0"
           >
             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}

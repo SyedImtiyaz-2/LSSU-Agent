@@ -104,6 +104,8 @@ class LeadUpsertRequest(BaseModel):
     name: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[str] = None
+    icp_id: Optional[int] = None
+    icp_name: Optional[str] = None
 
 
 @router.post("/chat/lead")
@@ -112,12 +114,15 @@ def upsert_lead(req: LeadUpsertRequest):
     try:
         sb = _get_sb()
         existing = sb.schema(SUPABASE_SCHEMA).table("chat_sessions").select("session_id").eq("session_id", req.session_id).execute()
-        row = {k: v for k, v in {"name": req.name, "phone": req.phone, "email": req.email}.items() if v is not None}
+        row = {k: v for k, v in {
+            "name": req.name, "phone": req.phone, "email": req.email,
+            "icp_id": req.icp_id, "icp_name": req.icp_name,
+        }.items() if v is not None}
         if not existing.data:
             sb.schema(SUPABASE_SCHEMA).table("chat_sessions").insert({
                 "session_id": req.session_id,
                 "page_slug": "agent-chatbot",
-                "icp_name": "Agent Chatbot",
+                "icp_name": req.icp_name or "Agent Chatbot",
                 "referral_source": "agent",
                 **row,
             }).execute()
