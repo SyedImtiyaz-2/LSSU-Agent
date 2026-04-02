@@ -73,6 +73,16 @@ async def signup(req: AuthRequest):
         # Sign in immediately to get a valid session token
         anon = get_auth_client()
         session = anon.auth.sign_in_with_password({"email": req.email, "password": req.password})
+
+        # Save profile to public.users (trigger may also handle this)
+        try:
+            admin.table("users").upsert({
+                "id": result.user.id,
+                "email": result.user.email,
+            }).execute()
+        except Exception:
+            pass  # Trigger already handles it
+
         return {
             "access_token": session.session.access_token,
             "user_id": result.user.id,
