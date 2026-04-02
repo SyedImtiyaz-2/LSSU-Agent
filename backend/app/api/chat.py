@@ -2,8 +2,8 @@ import logging
 from fastapi import APIRouter
 from pydantic import BaseModel
 from typing import List, Optional
-from app.services.rag_service import query_context
-from app.config import OPENAI_API_KEY, OPENAI_MODEL
+from ..services.rag_service import query_context
+from ..config import OPENAI_API_KEY, OPENAI_MODEL
 
 router = APIRouter(tags=["chat"])
 logger = logging.getLogger("chat")
@@ -12,22 +12,24 @@ CAL_LINK = "https://cal.com/ceo-fastship/15min"
 SUPABASE_SCHEMA = "issu"
 
 CHAT_SYSTEM_PROMPT = """You are an AI assistant for LSSU (Lake Superior State University). \
-You help staff understand how AI can improve their workflows, answer questions about \
-university processes, and provide guidance based on the knowledge base.
+You help anyone — prospective students, current students, faculty, or staff — with \
+questions about LSSU programs, departments, campus life, policies, and university services.
 
 Guidelines:
 - Be helpful, concise, and professional
-- If the knowledge base context is provided, ground your answer in it
+- If the knowledge base context is provided, ground your answer in it and be specific
+- When comparing programs or departments, highlight key differences clearly
 - If you cannot confidently answer the question, say so honestly and end your reply \
 with exactly this line on a new line: SUGGEST_CALL
-- Keep responses focused and actionable
-- Do NOT make up information you are not sure about"""
+- Do NOT make up program details, tuition figures, or deadlines you are not sure about"""
 
 
 class LeadInfo(BaseModel):
-    name: str
-    phone: str
-    email: str
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    icp_id: Optional[int] = None
+    icp_name: Optional[str] = None
 
 
 class ChatMessage(BaseModel):
@@ -50,7 +52,7 @@ class ChatResponse(BaseModel):
 
 
 def _get_sb():
-    from app.services.supabase_service import get_client
+    from ..services.supabase_service import get_client
     return get_client()
 
 
@@ -144,13 +146,30 @@ async def chat(req: ChatRequest):
     # Log user message
     _log_message(session_id, "user", req.message)
 
-    # RAG
-    context = query_context(req.message, top_k=3)
+    # RAG — use higher top_k for comparison questions, double-query for "X vs Y"
+    import re as _re
+    is_comparison = bool(_re.search(r'\bvs\.?\b|compare|difference|versus|between\b', req.message, _re.I))
+    top_k = 6 if is_comparison else 3
+
+    context = query_context(req.message, top_k=top_k)
+
+    # For comparisons: also query each subject separately and merge context
+    if is_comparison:
+        parts = _re.split(r'\bvs\.?\b|\bversus\b|\bcompare\b|\band\b', req.message, flags=_re.I)
+        for part in parts[:2]:
+            part = part.strip()
+            if len(part) > 4:
+                extra = query_context(part, top_k=3)
+                if extra and extra != "Empty Response":
+                    context = (context or "") + "\n\n" + extra
+
     rag_used = bool(context and context.strip() and context != "Empty Response")
 
     system = CHAT_SYSTEM_PROMPT
     if rag_used:
         system += f"\n\nKnowledge Base Context:\n{context}"
+        if is_comparison:
+            system += "\n\nIMPORTANT: Structure your comparison with clear sections or a table. If the KB lacks details on one side, say so rather than guessing."
 
     messages = [{"role": "system", "content": system}]
     for msg in req.history[-10:]:
