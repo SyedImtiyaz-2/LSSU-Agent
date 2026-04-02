@@ -15,9 +15,6 @@ SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 SUPABASE_SCHEMA = os.getenv("SUPABASE_SCHEMA", "issu")
 
-MOCK_AUTH_ENABLED = os.getenv("MOCK_AUTH_ENABLED", "false").lower() in ("1", "true", "yes")
-MOCK_AUTH_EMAIL = os.getenv("MOCK_AUTH_EMAIL", "demo@lssu.edu")
-MOCK_AUTH_PASSWORD = os.getenv("MOCK_AUTH_PASSWORD", "demo1234")
 
 UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "uploads")
 REPORT_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "reports")
