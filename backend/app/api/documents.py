@@ -3,8 +3,8 @@ import uuid
 import logging
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from pydantic import BaseModel
-from app.config import UPLOAD_DIR
-from app.services import supabase_service, rag_service
+from ..config import UPLOAD_DIR
+from ..services import supabase_service, rag_service
 
 router = APIRouter(tags=["documents"])
 logger = logging.getLogger("documents")
@@ -62,7 +62,6 @@ async def upload_document(file: UploadFile = File(...)):
         "stored_name": safe_name,
         "file_size": len(content),
         "content": text_content,
-        "status": "indexed",
     })
 
     # Rebuild RAG index with new document
@@ -108,7 +107,6 @@ async def crawl_document(req: CrawlRequest):
         "stored_name": safe_name,
         "file_size": len(text_content.encode("utf-8")),
         "content": text_content,
-        "status": "indexed",
     })
 
     rag_service.build_index()
