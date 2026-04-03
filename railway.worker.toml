@@ -2,6 +2,7 @@
 dockerfilePath = "Dockerfile.worker"
 
 [deploy]
-startCommand = "python -m app.agent.interview_agent start"
+startCommand = "cd /app/backend && python -m app.agent.interview_agent start"
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 5
+healthcheckPath = ""

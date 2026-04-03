@@ -3,4 +3,5 @@ WORKDIR /app/backend
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/ .
+ENV PYTHONPATH=/app/backend
 CMD ["python", "-m", "app.agent.interview_agent", "start"]
