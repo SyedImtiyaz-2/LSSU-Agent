@@ -11,7 +11,10 @@ import InvitationsPage from "./pages/InvitationsPage";
 import InviteLandingPage from "./pages/InviteLandingPage";
 import ChatPage from "./pages/ChatPage";
 
+const SKIP_AUTH = import.meta.env.VITE_SKIP_AUTH === "true";
+
 function ProtectedRoute({ children }) {
+  if (SKIP_AUTH) return children;
   if (!isAuthenticated()) return <Navigate to="/login" replace />;
   return children;
 }
