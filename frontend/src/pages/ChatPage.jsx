@@ -20,6 +20,34 @@ const ICP_OPTIONS = [
   { id: 13, name: "Hockey Athlete (Women's)",      full: "Collegiate Hockey Athlete (Women's)" },
 ];
 
+// Detect if user typed a question instead of answering the lead prompt
+function detectIntent(text, step) {
+  const t = text.trim();
+  const questionWords = /^(what|who|how|why|when|where|is|are|can|does|do|tell|explain|which|will|would|could|should|give|show|list|compare|define|describe)\b/i;
+  const hasQuestionMark = t.includes("?");
+  const looksLikeQuestion = questionWords.test(t) || hasQuestionMark;
+
+  if (step === 0) {
+    // Name step: too long, contains question words, or has digits = likely not a name
+    const tooLong = t.split(" ").length > 4;
+    const hasDigits = /\d/.test(t);
+    if (looksLikeQuestion || (tooLong && !hasDigits))
+      return { isQuestion: true, nudge: `I'd love to help with that! But first, could you share your name? 😊` };
+  }
+  if (step === 1) {
+    // Phone step: should be mostly digits
+    const digitsOnly = t.replace(/[\s\-\+\(\)]/g, "");
+    if (looksLikeQuestion || !/^\d{5,}$/.test(digitsOnly))
+      return { isQuestion: true, nudge: `Happy to answer that once we get started! Just need your phone number first.` };
+  }
+  if (step === 2) {
+    // Email step: should contain @
+    if (looksLikeQuestion || !t.includes("@"))
+      return { isQuestion: true, nudge: `Almost there! Could you drop your email address? Then we can dive right in.` };
+  }
+  return { isQuestion: false };
+}
+
 // Lead collection steps before chat opens (text-based)
 const LEAD_STEPS = [
   { key: "name",  question: "Hi! I'm the LSSU AI Assistant. Before we begin, could you tell me your name?" },
@@ -132,12 +160,19 @@ export default function ChatPage() {
   };
 
   const handleLeadStep = (text) => {
+    const { isQuestion, nudge } = detectIntent(text, leadStep);
+    addMessage("user", text);
+
+    if (isQuestion) {
+      setTimeout(() => addMessage("assistant", nudge), 400);
+      return; // don't advance step
+    }
+
     const updated = { ...lead };
 
     if (leadStep === 0) {
       updated.name = text;
       setLead(updated);
-      addMessage("user", text);
       upsertChatLead(sessionId.current, { name: text });
       const q = typeof LEAD_STEPS[1].question === "function"
         ? LEAD_STEPS[1].question(text)
@@ -147,7 +182,6 @@ export default function ChatPage() {
     } else if (leadStep === 1) {
       updated.phone = text;
       setLead(updated);
-      addMessage("user", text);
       upsertChatLead(sessionId.current, { phone: text });
       setTimeout(() => addMessage("assistant", LEAD_STEPS[2].question), 400);
       setLeadStep(2);
