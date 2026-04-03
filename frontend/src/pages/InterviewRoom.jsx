@@ -8,7 +8,7 @@ import {
   useParticipants,
 } from "@livekit/components-react";
 import "@livekit/components-styles";
-import { Mic, MicOff, PhoneOff, Loader2 } from "lucide-react";
+import { Mic, MicOff, PhoneOff, Loader2, CheckCircle } from "lucide-react";
 import AudioVisualizer from "../components/AudioVisualizer";
 import TranscriptPanel from "../components/TranscriptPanel";
 import { getLivekitToken, getInterview } from "../api";
@@ -23,6 +23,13 @@ function InterviewContent({ onDisconnect }) {
   const [userSpeaking, setUserSpeaking] = useState(false);
   const [interviewDone, setInterviewDone] = useState(false);
   const pendingSegments = useRef({});
+
+  // Auto-disconnect 3s after interview_complete (let agent finish speaking)
+  useEffect(() => {
+    if (!interviewDone) return;
+    const timer = setTimeout(() => onDisconnect(), 3000);
+    return () => clearTimeout(timer);
+  }, [interviewDone]);
 
   useEffect(() => {
     if (!room) return;
@@ -216,6 +223,28 @@ function InterviewContent({ onDisconnect }) {
   );
 }
 
+function SessionEndedModal({ onNewSession }) {
+  return (
+    <div className="h-full flex items-center justify-center">
+      <div className="text-center max-w-sm w-full mx-4 p-8 border border-neutral-800 rounded-2xl bg-neutral-900">
+        <div className="w-16 h-16 rounded-full bg-green-500/10 border border-green-500/30 flex items-center justify-center mx-auto mb-6">
+          <CheckCircle className="w-8 h-8 text-green-400" />
+        </div>
+        <h2 className="text-xl font-semibold text-white mb-2">Session Ended</h2>
+        <p className="text-sm text-neutral-400 mb-8">
+          Your interview session has been completed. Thank you for your time!
+        </p>
+        <button
+          onClick={onNewSession}
+          className="px-6 py-3 bg-white text-black rounded-xl text-sm font-medium hover:bg-neutral-200 transition-colors w-full"
+        >
+          Start New Session
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function InterviewRoom() {
   const { interviewId } = useParams();
   const location = useLocation();
@@ -224,6 +253,7 @@ export default function InterviewRoom() {
   const [wsUrl, setWsUrl] = useState(null);
   const [roomName, setRoomName] = useState(location.state?.room_name || null);
   const [error, setError] = useState(null);
+  const [sessionEnded, setSessionEnded] = useState(false);
 
   useEffect(() => {
     async function connect() {
@@ -245,7 +275,7 @@ export default function InterviewRoom() {
     connect();
   }, [interviewId, roomName]);
 
-  const handleDisconnect = () => navigate("/interviews");
+  const handleDisconnect = () => setSessionEnded(true);
 
   if (error) {
     return (
@@ -269,6 +299,10 @@ export default function InterviewRoom() {
         <Loader2 className="w-6 h-6 text-neutral-500 animate-spin" />
       </div>
     );
+  }
+
+  if (sessionEnded) {
+    return <SessionEndedModal onNewSession={() => navigate("/interviews")} />;
   }
 
   return (
