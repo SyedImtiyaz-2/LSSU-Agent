@@ -33,6 +33,8 @@ const FILLER_PREFIX = /^(just|so|well|actually|basically|um|uh|oh|hi|hey|hello)\
 // Tier 1: fast regex extraction — returns name string or null
 function extractNameRegex(text) {
   let t = text.trim().replace(/[.,!?]+$/, "").trim();
+  // Strip leading social preamble before the name phrase
+  t = t.replace(/^(?:hey\s+there|hi\s+there|hello\s+there|as\s+i\s+said|like\s+i\s+said|just\s+so\s+you\s+know|oh\s+hey|btw)[,!.]?\s*/i, "").trim();
   const prefixes = [
     /^(?:hi+[,!]?\s*|hello+[,!]?\s*|hey+[,!]?\s*)?(?:my name is|i(?:'m| am)|call me|it(?:'s| is)|this is|name(?:'s| is))\s+/i,
     /^(?:you can call me|people call me|everyone calls me)\s+/i,
@@ -93,6 +95,9 @@ function detectIntent(text, step) {
   const looksLikeQuestion = questionWords.test(t) || hasQuestionMark;
 
   if (step === 0) {
+    // Name-introducing phrases override all other checks — let extraction handle it
+    const hasNameIntro = /\b(?:my name is|i'?m|i am|call me|it'?s|this is|name(?:'s)? is)\s+[a-z]/i.test(t);
+    if (hasNameIntro) return { isQuestion: false };
     const tooLong = t.split(" ").length > 4;
     const hasDigits = /\d/.test(t);
     if (looksLikeQuestion || (tooLong && !hasDigits))
