@@ -212,7 +212,7 @@ function IcpSelector({ onSelect }) {
   );
 }
 
-const YES_RE  = /^(yes|yeah|yep|yup|correct|that'?s right|right|sure|ok|okay|confirmed?|👍|✓|y)\.?$/i;
+const YES_RE  = /^(yes|yeah|yep|yup|correct|that'?s right|right|sure|ok|okay|confirmed?|👍|✓|y)\b/i;
 const NO_RE   = /^(no|nope|wrong|incorrect|not quite|nah|change|different|n)\.?$/i;
 // Matches explicit "I don't want to share" intent at phone/email steps
 const SKIP_RE = /^(skip|pass|no thanks|nah|nope|none|n\/a|na|no phone|no email|no number|move on|continue|next|don'?t have|prefer not|rather not|not comfortable|no|without|decline|bypass)\.?$/i;
@@ -302,7 +302,7 @@ export default function ChatPage() {
         setLeadStep(0);
       } else {
         // They typed a new name directly instead of yes/no
-        const extracted = extractName(text);
+        const { name: extracted } = await extractName(text);
         const name = extracted || text.trim();
         const updated = { ...lead, name };
         setLead(updated);
