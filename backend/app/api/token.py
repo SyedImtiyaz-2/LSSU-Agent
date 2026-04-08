@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Query
 from livekit.api import AccessToken, VideoGrants
-from app.config import LIVEKIT_API_KEY, LIVEKIT_API_SECRET, LIVEKIT_URL
+from ..config import LIVEKIT_API_KEY, LIVEKIT_API_SECRET, LIVEKIT_URL
 
 router = APIRouter(tags=["token"])
 

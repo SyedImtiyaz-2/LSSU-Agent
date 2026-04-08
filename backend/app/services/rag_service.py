@@ -1,6 +1,6 @@
 import os
 import logging
-from app.config import OPENAI_API_KEY, OPENAI_MODEL, UPLOAD_DIR
+from ..config import OPENAI_API_KEY, OPENAI_MODEL, UPLOAD_DIR
 
 logger = logging.getLogger("rag-service")
 
@@ -30,7 +30,7 @@ def _fetch_documents_from_supabase() -> list[Document]:
     """Fetch document content from Supabase when local files aren't available.
     This is the primary path for the worker container which has no local uploads."""
     try:
-        from app.services.supabase_service import get_client
+        from .supabase_service import get_client
         sb = get_client()
         result = sb.table("documents").select("id, filename, content").execute()
         if not result.data:
@@ -108,7 +108,7 @@ def query_context(question: str, top_k: int = 3) -> str:
     return str(response)
 
 
-def generate_followup_questions(interview_answers: dict) -> list[str]:
+def generate_followup_questions(interview_answers: dict, prior_sessions: list[dict] | None = None) -> list[str]:
     """Generate 3 follow-up questions using RAG context + interview answers."""
 
     # Always rebuild index fresh so we pick up any new documents
@@ -171,10 +171,23 @@ def generate_followup_questions(interview_answers: dict) -> list[str]:
     from openai import OpenAI as OAI
     client = OAI(api_key=OPENAI_API_KEY)
 
+    # Build prior session context block if available
+    prior_context_block = ""
+    if prior_sessions:
+        parts = []
+        for i, s in enumerate(prior_sessions[:2], 1):
+            dept = s.get("department", "")
+            summ = s.get("summary", "")
+            if summ or dept:
+                parts.append(f"Session {i} ({dept}):\n{summ or 'No summary available'}")
+        if parts:
+            prior_context_block = "\n\nPRIOR INTERVIEW SESSIONS FOR THIS PARTICIPANT:\n" + "\n\n".join(parts)
+            logger.info(f"Injecting prior context from {len(prior_sessions)} prior session(s)")
+
     prompt = f"""You are helping conduct a requirements-gathering interview at LSSU (Lake Superior State University). Based on the interview answers so far AND our existing knowledge base about this department, generate exactly 3 follow-up questions.
 
 Interview Answers So Far:
-{summary}
+{summary}{prior_context_block}
 
 Knowledge Base Context (from our proposal documents and research):
 {context if context else "No additional context available from knowledge base."}
@@ -182,6 +195,7 @@ Knowledge Base Context (from our proposal documents and research):
 INSTRUCTIONS:
 - Generate 3 follow-up questions that are SPECIFIC to this person's situation
 - If knowledge base context is available, USE IT to ask informed questions that reference specific details from the documents (e.g. "I see from our research that your department handles X — can you tell me more about how that works day-to-day?")
+- If prior session data is provided, DO NOT re-ask questions already answered in prior sessions; instead build on those answers and go deeper
 - If knowledge base mentions specific pain points, solutions, or proposals relevant to this person, ask about those directly
 - Questions should help us understand concrete requirements for AI/automation solutions
 - Keep questions conversational and natural for a voice interview

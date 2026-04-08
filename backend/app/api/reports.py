@@ -3,7 +3,7 @@ import logging
 import traceback
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
-from app.services import supabase_service, report_service
+from ..services import supabase_service, report_service
 
 router = APIRouter(tags=["reports"])
 logger = logging.getLogger("reports")

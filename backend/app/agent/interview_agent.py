@@ -13,17 +13,15 @@ from livekit import agents, rtc
 from livekit.agents import AgentSession, Agent, llm
 from livekit.plugins import openai, silero
 
-# Add parent paths for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-from app.agent.prompts import (
+from .prompts import (
     SYSTEM_PROMPT,
     PREDEFINED_QUESTIONS,
     CLOSING_MESSAGE,
     SUMMARY_PROMPT,
 )
-from app.services.rag_service import generate_followup_questions
-from app.services.report_service import generate_pdf_report
-from app.services.supabase_service import update_interview, get_interview
+from ..services.rag_service import generate_followup_questions
+from ..services.report_service import generate_pdf_report
+from ..services.supabase_service import update_interview, get_interview, get_prior_interviews
 
 logger = logging.getLogger("interview-agent")
 
@@ -62,6 +60,7 @@ class InterviewManager:
         self.followup_questions = []
         self.name = ""
         self.department = ""
+        self.prior_sessions: list[dict] = []   # prior interviews for this participant
         self._followups_ready = asyncio.Event()
         self._followups_generating = False
 
@@ -89,6 +88,13 @@ class InterviewManager:
         if self.state == InterviewState.Q1_NAME:
             self.name = answer.strip().strip(".")
             self.answers["name"] = self.name
+            # Load prior sessions for this participant (non-blocking, best-effort)
+            try:
+                self.prior_sessions = get_prior_interviews(self.name)
+                if self.prior_sessions:
+                    logger.info(f"Found {len(self.prior_sessions)} prior interview(s) for {self.name}")
+            except Exception:
+                pass
         elif self.state == InterviewState.Q2_DEPARTMENT:
             self.department = answer.strip().strip(".")
             self.answers["department"] = self.department
@@ -126,7 +132,7 @@ class InterviewManager:
             logger.info(f"Generating follow-ups in background for: {self.answers.get('name', 'Unknown')}")
             loop = asyncio.get_event_loop()
             questions = await loop.run_in_executor(
-                None, generate_followup_questions, self.answers
+                None, generate_followup_questions, self.answers, self.prior_sessions
             )
             self.followup_questions = questions
             logger.info(f"Generated {len(self.followup_questions)} follow-up questions")
@@ -253,7 +259,7 @@ class InterviewAgent(Agent):
             )
             summary = summary_response.choices[0].message.content
 
-            from app.services.supabase_service import get_client
+            from ..services.supabase_service import get_client
             sb = get_client()
             result = sb.table("interviews").select("*").eq("room_name", mgr.room_name).execute()
             if not result.data:

@@ -3,8 +3,8 @@ import uuid
 import logging
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
-from app.services.supabase_service import get_client
-from app.services.email_service import send_invitation_email
+from ..services.supabase_service import get_client
+from ..services.email_service import send_invitation_email
 
 router = APIRouter(tags=["invitations"])
 logger = logging.getLogger("invitations")

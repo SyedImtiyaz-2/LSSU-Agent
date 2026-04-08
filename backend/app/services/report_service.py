@@ -2,7 +2,7 @@ import os
 from datetime import datetime
 from fpdf import FPDF
 from openai import OpenAI
-from app.config import REPORT_DIR, OPENAI_API_KEY, OPENAI_MODEL
+from ..config import REPORT_DIR, OPENAI_API_KEY, OPENAI_MODEL
 
 LLM_REPORT_PROMPT = """You are a professional business analyst. Based on the following interview transcript from an LSSU (Lake Superior State University) staff member, generate a structured requirements report.
 

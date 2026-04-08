@@ -1,6 +1,6 @@
 import uuid
 from fastapi import APIRouter
-from app.services import supabase_service
+from ..services import supabase_service
 
 router = APIRouter(tags=["interviews"])
 

@@ -20,7 +20,72 @@ const ICP_OPTIONS = [
   { id: 13, name: "Hockey Athlete (Women's)",      full: "Collegiate Hockey Athlete (Women's)" },
 ];
 
+// ── Name extraction ───────────────────────────────────────────────────────
+
+const NON_NAME_WORDS = new Set([
+  "just","here","there","so","well","actually","basically","literally",
+  "the","a","an","is","am","are","was","were","be","been",
+  "hi","hello","hey","ok","okay","yes","no","sure","thanks","thank",
+  "um","uh","hmm","oh","ah","and","or","but","not","also","too",
+]);
+const FILLER_PREFIX = /^(just|so|well|actually|basically|um|uh|oh|hi|hey|hello)\s+/i;
+
+// Tier 1: fast regex extraction — returns name string or null
+function extractNameRegex(text) {
+  let t = text.trim().replace(/[.,!?]+$/, "").trim();
+  const prefixes = [
+    /^(?:hi+[,!]?\s*|hello+[,!]?\s*|hey+[,!]?\s*)?(?:my name is|i(?:'m| am)|call me|it(?:'s| is)|this is|name(?:'s| is))\s+/i,
+    /^(?:you can call me|people call me|everyone calls me)\s+/i,
+  ];
+  for (const re of prefixes) t = t.replace(re, "");
+  t = t.trim();
+  while (FILLER_PREFIX.test(t)) t = t.replace(FILLER_PREFIX, "").trim();
+  const words = t.split(/\s+/).filter(Boolean);
+  if (!words.length || words.length > 3) return null;
+  if (!words.every(w => /^[a-zA-Z'-]+$/.test(w))) return null;
+  if (words.some(w => NON_NAME_WORDS.has(w.toLowerCase()))) return null;
+  return words.map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(" ");
+}
+
+// Tier 2: LLM extraction via backend — async, used when regex returns null
+async function extractNameLLM(text) {
+  try {
+    const res = await fetch("/api/utils/extract-name", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.name || null;
+  } catch {
+    return null;
+  }
+}
+
+// Combined: try regex first (instant), fall back to LLM if uncertain.
+// Returns { name: string|null, confident: boolean }
+//   confident=true  → regex matched, skip confirmation
+//   confident=false → LLM matched, show confirmation
+async function extractName(text) {
+  const fast = extractNameRegex(text);
+  if (fast !== null) return { name: fast, confident: true };
+  const llm = await extractNameLLM(text);
+  return { name: llm, confident: false };
+}
+
+// ── Contact validation helpers ────────────────────────────────────────────
+function isValidPhone(text) {
+  const digits = text.replace(/\D/g, "");
+  return digits.length === 10 || (digits.length === 11 && digits[0] === "1");
+}
+
+function isValidEmail(text) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(text.trim());
+}
+
 // Detect if user typed a question instead of answering the lead prompt
+// Returns: { isQuestion, nudge, isValidationError }
 function detectIntent(text, step) {
   const t = text.trim();
   const questionWords = /^(what|who|how|why|when|where|is|are|can|does|do|tell|explain|which|will|would|could|should|give|show|list|compare|define|describe)\b/i;
@@ -28,23 +93,33 @@ function detectIntent(text, step) {
   const looksLikeQuestion = questionWords.test(t) || hasQuestionMark;
 
   if (step === 0) {
-    // Name step: too long, contains question words, or has digits = likely not a name
     const tooLong = t.split(" ").length > 4;
     const hasDigits = /\d/.test(t);
     if (looksLikeQuestion || (tooLong && !hasDigits))
       return { isQuestion: true, nudge: `I'd love to help with that! But first, could you share your name? 😊` };
   }
+
   if (step === 1) {
-    // Phone step: should be mostly digits
-    const digitsOnly = t.replace(/[\s\-\+\(\)]/g, "");
-    if (looksLikeQuestion || !/^\d{5,}$/.test(digitsOnly))
+    if (looksLikeQuestion)
       return { isQuestion: true, nudge: `Happy to answer that once we get started! Just need your phone number first.` };
+    // Has some digits but not a valid 10-digit number → validation error
+    const hasDigits = /\d/.test(t);
+    if (hasDigits && !isValidPhone(t))
+      return { isQuestion: true, isValidationError: true, nudge: `That doesn't look like a valid phone number. Please enter a 10-digit US number — e.g. 906-555-1234.` };
+    // No digits at all and not a question → treat as non-phone input
+    if (!hasDigits)
+      return { isQuestion: true, nudge: `I just need your phone number — digits only, e.g. 9065551234.` };
   }
+
   if (step === 2) {
-    // Email step: should contain @
-    if (looksLikeQuestion || !t.includes("@"))
+    if (looksLikeQuestion)
+      return { isQuestion: true, nudge: `Almost there! Could you drop your email address? Then we can dive right in.` };
+    if (t.includes("@") && !isValidEmail(t))
+      return { isQuestion: true, isValidationError: true, nudge: `That email doesn't look quite right. Try something like name@example.com.` };
+    if (!t.includes("@"))
       return { isQuestion: true, nudge: `Almost there! Could you drop your email address? Then we can dive right in.` };
   }
+
   return { isQuestion: false };
 }
 
@@ -132,16 +207,24 @@ function IcpSelector({ onSelect }) {
   );
 }
 
+const YES_RE  = /^(yes|yeah|yep|yup|correct|that'?s right|right|sure|ok|okay|confirmed?|👍|✓|y)\.?$/i;
+const NO_RE   = /^(no|nope|wrong|incorrect|not quite|nah|change|different|n)\.?$/i;
+// Matches explicit "I don't want to share" intent at phone/email steps
+const SKIP_RE = /^(skip|pass|no thanks|nah|nope|none|n\/a|na|no phone|no email|no number|move on|continue|next|don'?t have|prefer not|rather not|not comfortable|no|without|decline|bypass)\.?$/i;
+
 export default function ChatPage() {
   const [messages, setMessages] = useState([
     { role: "assistant", content: LEAD_STEPS[0].question },
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  // 0=name, 1=phone, 2=email, 3=icp selection, 4=chat open
+  // 0=name entry, 0.5=name confirm, 1=phone, 2=email, 3=icp, 4=chat
   const [leadStep, setLeadStep] = useState(0);
   const [lead, setLead] = useState({ name: "", phone: "", email: "", icp_id: null, icp_name: "" });
+  const [pendingName, setPendingName] = useState(""); // extracted name awaiting confirm
   const [showIcpSelector, setShowIcpSelector] = useState(false);
+  const [phoneAttempts, setPhoneAttempts] = useState(0);
+  const [emailAttempts, setEmailAttempts] = useState(0);
 
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
@@ -159,37 +242,137 @@ export default function ChatPage() {
     setMessages((prev) => [...prev, { role, content, ...extras }]);
   };
 
-  const handleLeadStep = (text) => {
-    const { isQuestion, nudge } = detectIntent(text, leadStep);
+  const handleLeadStep = async (text) => {
     addMessage("user", text);
 
-    if (isQuestion) {
-      setTimeout(() => addMessage("assistant", nudge), 400);
-      return; // don't advance step
+    // ── Step 0: name entry ────────────────────────────────────────────────
+    if (leadStep === 0) {
+      const { isQuestion, nudge } = detectIntent(text, 0);
+      if (isQuestion) {
+        setTimeout(() => addMessage("assistant", nudge), 400);
+        return;
+      }
+      setLoading(true);
+      const { name: extracted, confident } = await extractName(text);
+      setLoading(false);
+
+      if (!extracted) {
+        // Neither regex nor LLM found a name
+        addMessage("assistant", `Could you share just your first name? For example: "Alex"`);
+        return;
+      }
+
+      if (confident) {
+        // Regex was sure — accept directly, no confirmation needed
+        const updated = { ...lead, name: extracted };
+        setLead(updated);
+        upsertChatLead(sessionId.current, { name: extracted });
+        addMessage("assistant", LEAD_STEPS[1].question(extracted));
+        setLeadStep(1);
+      } else {
+        // LLM extracted it from messy input — confirm with the user
+        setPendingName(extracted);
+        addMessage("assistant", `Just to confirm — should I call you **${extracted}**? (yes / no)`);
+        setLeadStep(0.5);
+      }
+      return;
     }
 
-    const updated = { ...lead };
+    // ── Step 0.5: name confirmation ───────────────────────────────────────
+    if (leadStep === 0.5) {
+      if (YES_RE.test(text.trim())) {
+        // Confirmed — save and move on
+        const updated = { ...lead, name: pendingName };
+        setLead(updated);
+        upsertChatLead(sessionId.current, { name: pendingName });
+        const q = LEAD_STEPS[1].question(pendingName);
+        setTimeout(() => addMessage("assistant", q), 400);
+        setLeadStep(1);
+      } else if (NO_RE.test(text.trim())) {
+        // Rejected — ask again
+        setPendingName("");
+        setTimeout(() => addMessage("assistant",
+          `No worries! What would you like me to call you?`
+        ), 400);
+        setLeadStep(0);
+      } else {
+        // They typed a new name directly instead of yes/no
+        const extracted = extractName(text);
+        const name = extracted || text.trim();
+        const updated = { ...lead, name };
+        setLead(updated);
+        upsertChatLead(sessionId.current, { name });
+        const q = LEAD_STEPS[1].question(name);
+        setTimeout(() => addMessage("assistant", q), 400);
+        setLeadStep(1);
+      }
+      return;
+    }
 
-    if (leadStep === 0) {
-      updated.name = text;
+    // ── Step 1: phone ─────────────────────────────────────────────────────
+    if (leadStep === 1) {
+      // Explicit skip intent
+      if (SKIP_RE.test(text.trim())) {
+        setPhoneAttempts(0);
+        setTimeout(() => addMessage("assistant", `No problem! ${LEAD_STEPS[2].question}`), 400);
+        setLeadStep(2);
+        return;
+      }
+      const { isQuestion, nudge } = detectIntent(text, 1);
+      if (isQuestion) {
+        const newAttempts = phoneAttempts + 1;
+        setPhoneAttempts(newAttempts);
+        // Auto-skip after 2 failed attempts
+        if (newAttempts >= 2) {
+          setTimeout(() => addMessage("assistant",
+            `No worries — we can skip the phone number! ${LEAD_STEPS[2].question}`
+          ), 400);
+          setLeadStep(2);
+          return;
+        }
+        const hint = `\n\nNo worries if you'd prefer not to — just type **skip** to continue without a phone number.`;
+        setTimeout(() => addMessage("assistant", nudge + hint), 400);
+        return;
+      }
+      setPhoneAttempts(0);
+      const digits = text.replace(/\D/g, "");
+      const phone = digits.length === 11 ? digits.slice(1) : digits; // normalise to 10 digits
+      const updated = { ...lead, phone };
       setLead(updated);
-      upsertChatLead(sessionId.current, { name: text });
-      const q = typeof LEAD_STEPS[1].question === "function"
-        ? LEAD_STEPS[1].question(text)
-        : LEAD_STEPS[1].question;
-      setTimeout(() => addMessage("assistant", q), 400);
-      setLeadStep(1);
-    } else if (leadStep === 1) {
-      updated.phone = text;
-      setLead(updated);
-      upsertChatLead(sessionId.current, { phone: text });
+      upsertChatLead(sessionId.current, { phone });
       setTimeout(() => addMessage("assistant", LEAD_STEPS[2].question), 400);
       setLeadStep(2);
-    } else if (leadStep === 2) {
-      updated.email = text;
+      return;
+    }
+
+    // ── Step 2: email ─────────────────────────────────────────────────────
+    if (leadStep === 2) {
+      // Explicit skip intent
+      if (SKIP_RE.test(text.trim())) {
+        setEmailAttempts(0);
+        setTimeout(() => setShowIcpSelector(true), 400);
+        setLeadStep(3);
+        return;
+      }
+      const { isQuestion, nudge } = detectIntent(text, 2);
+      if (isQuestion) {
+        const newAttempts = emailAttempts + 1;
+        setEmailAttempts(newAttempts);
+        // Auto-skip after 2 failed attempts
+        if (newAttempts >= 2) {
+          setTimeout(() => setShowIcpSelector(true), 400);
+          setLeadStep(3);
+          return;
+        }
+        const hint = `\n\nNo worries if you'd prefer not to — just type **skip** to continue without an email.`;
+        setTimeout(() => addMessage("assistant", nudge + hint), 400);
+        return;
+      }
+      setEmailAttempts(0);
+      const email = text.trim().toLowerCase();
+      const updated = { ...lead, email };
       setLead(updated);
-      addMessage("user", text);
-      upsertChatLead(sessionId.current, { email: text });
+      upsertChatLead(sessionId.current, { email });
       setTimeout(() => setShowIcpSelector(true), 400);
       setLeadStep(3);
     }
@@ -230,7 +413,7 @@ export default function ChatPage() {
     if (!text || loading) return;
     setInput("");
 
-    if (leadStep < 3) {
+    if (leadStep < 3) {          // covers 0, 0.5, 1, 2
       handleLeadStep(text);
     } else if (leadStep === 4) {
       sendChat(text);
@@ -245,10 +428,11 @@ export default function ChatPage() {
   };
 
   const placeholder =
-    leadStep === 0 ? "Your name..." :
-    leadStep === 1 ? "Your phone number..." :
-    leadStep === 2 ? "Your email address..." :
-    leadStep === 3 ? "Select a program above..." :
+    leadStep === 0   ? "Your name..." :
+    leadStep === 0.5 ? "yes / no / or type your name..." :
+    leadStep === 1   ? "Your phone number..." :
+    leadStep === 2   ? "Your email address..." :
+    leadStep === 3   ? "Select a program above..." :
     "Ask anything about LSSU...";
 
   return (
